@@ -3,19 +3,67 @@
   tasks:
 
   - name: Snap Packages
-    snap:
-      name: "{{ item }}"
-      classic: yes
+    ansible.builtin.shell: snap install "{{ item }}" --classic
+    become: true
     loop:
       - code
-      # - bitwarden
-      # - kubernetes-cli
-      # - kubernetes-helm
-      # - discord
-      # - google-chrome
-      # - mysqlworkbench
-      # - fantasy-grounds
-      # - flux
+      - bitwarden
+      - discord
+
+  - name: Add Support for 32 bit
+    ansible.builtin.shell: dpkg --add-architecture i386
+    become: true
+
+  - name: Import Steam GPG keybindings
+    ansible.builtin.apt_key:
+      url: http://repo.steampowered.com/steam/archive/stable/steam.gpg
+      state: present
+    become: true
+
+  - name: Clean up old Steam sources
+    ansible.builtin.file:
+      path: "{{ item }}"
+      state: absent
+    become: true
+    loop:
+      - /etc/apt/sources.list.d/steam.list 
+      - /etc/apt/sources.list.d/steam-beta.list
+
+  - name: Add Steam repository
+    ansible.builtin.apt_repository:
+      repo: "deb [arch=amd64,i386] http://repo.steampowered.com/steam/ stable steam"
+      state: present
+      filename: "steam"
+    become: true
+
+  - name: Add Docker GPG keybindings
+    ansible.builtin.apt_key:
+      url: https://download.docker.com/linux/ubuntu/gpg
+      state: present
+    become: true
+
+  - name: Add Docker repository
+    ansible.builtin.apt_repository:
+      repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu noble stable"
+      state: present
+      filename: "docker"
+    become: true
+
+  - name: Download Docker Desktop
+    get_url:
+      url: https://desktop.docker.com/linux/main/amd64/docker-desktop-amd64.deb
+      dest: /tmp/docker-desktop.deb
+    become: true
+
+  - name: Install Docker Desktop
+    apt:
+      deb: /tmp/docker-desktop.deb
+    become: true
+
+  - name: Update apt cache
+    apt:
+      update_cache: yes
+    become: true
 
   - name: install  packages
     apt:
@@ -42,15 +90,25 @@
       - zsh
       - zsh-syntax-highlighting
       - npm
-      - cowsay
       - redis
       - tree
       - jq
       - yarn
-      - docker
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
       - firefox
-      - steam
+      - software-properties-common
+      - apt-transport-https
+      - curl
+      - libgl1-mesa-dri:amd64
+      - libgl1-mesa-dri:i386
+      - steam-launcher
       - wireshark
+      - redshift-gtk
+      - onedrive
     become: true
 
   - name: Deploy Updated Profiles
@@ -72,40 +130,32 @@
       url: https://raw.githubusercontent.com/caiogondim/bullet-train-oh-my-zsh-theme/master/bullet-train.zsh-theme
       dest: "~/.oh-my-zsh/custom/themes/bullet-train.zsh-theme"
 
-  - name: Setup Fonts
-    copy:
-      src: fonts/*.ttf
-      dest: "~/Library/fonts/"
+  - name: Create Fonts Directory
+    file:
+      path: "~/.fonts/"
+      state: directory
       owner: pclemens
-      group: staff
+      group: pclemens
       mode: '0755'
 
-  - name: Get list of Fonts
-    command: "find /Users/pclemens/GIT/macossetup/fonts -type f"
-    register: files_to_copy
-
-  - name: debug
-    debug:
-      var: "{{ files_to_copy.stdout_lines }}"
-
   - name: Setup Fonts
+    connection: local
     copy:
-      src: "{{ item }}" 
-      dest: "~/Library/fonts/"
+      src: "{{ item }}"
+      dest: "/home/pclemens/.fonts/"
       owner: pclemens
-      group: staff
-      mode: 0750
-    loop:
-    - "{{ files_to_copy.stdout_lines }}"
+      group: pclemens
+      mode: '0755'
+    with_fileglob:
+      - fonts/*.ttf
 
   - name: Install VS Code Extentions
     shell: code --install-extension {{ item }}
     loop:
      - "eamodio.gitlens"
-     - "esbenp.prettier-vscode"
      - "coenraads.bracket-pair-colorizer-2"
      - "docsmsft.docs-markdown"
      - "oderwat.indent-rainbow"
      - "yzhang.markdown-all-in-one"
-     - "ms-vscode.sublime-keybindings"
      - "redhat.vscode-yaml"
+     - dracula-theme.theme-dracula
