@@ -1,0 +1,103 @@
+---
+- name: Install and configure nginx with SSL proxy
+  hosts: localhost
+  become: yes
+  connection: local
+  
+  vars:
+    domain: "paigevirtualdesktop.tailb19a40.ts.net"
+    ssl_cert_path: "{{ playbook_dir }}/ssl_certs/{{ domain }}-cert.pem"
+    ssl_key_path: "{{ playbook_dir }}/ssl_certs/{{ domain }}-key.pem"
+    backend_port: 8080
+    nginx_port: 443
+    
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+    
+    - name: Install nginx
+      package:
+        name: nginx
+        state: present
+    
+    - name: Ensure nginx is enabled and started
+      systemd:
+        name: nginx
+        enabled: yes
+        state: started
+    
+    - name: Check if SSL certificate exists
+      stat:
+        path: "{{ ssl_cert_path }}"
+      register: ssl_cert_file
+    
+    - name: Check if SSL key exists
+      stat:
+        path: "{{ ssl_key_path }}"
+      register: ssl_key_file
+    
+    - name: Fail if SSL certificates don't exist
+      fail:
+        msg: "SSL certificates not found. Please run create_ssl_cert.sh {{ domain }} first."
+      when: not ssl_cert_file.stat.exists or not ssl_key_file.stat.exists
+    
+    - name: Create SSL directory in nginx
+      file:
+        path: /etc/nginx/ssl
+        state: directory
+        mode: '0755'
+    
+    - name: Copy SSL certificate to nginx directory
+      copy:
+        src: "{{ ssl_cert_path }}"
+        dest: "/etc/nginx/ssl/{{ domain }}-cert.pem"
+        mode: '0644'
+        remote_src: yes
+      notify: restart nginx
+    
+    - name: Copy SSL key to nginx directory
+      copy:
+        src: "{{ ssl_key_path }}"
+        dest: "/etc/nginx/ssl/{{ domain }}-key.pem"
+        mode: '0600'
+        remote_src: yes
+      notify: restart nginx
+    
+    - name: Create nginx site configuration
+      template:
+        src: "{{ playbook_dir }}/templates/nginx_ssl_proxy.conf.j2"
+        dest: "/etc/nginx/sites-available/{{ domain }}"
+        mode: '0644'
+      notify: restart nginx
+    
+    - name: Enable nginx site
+      file:
+        src: "/etc/nginx/sites-available/{{ domain }}"
+        dest: "/etc/nginx/sites-enabled/{{ domain }}"
+        state: link
+      notify: restart nginx
+    
+    - name: Remove default nginx site if exists
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: restart nginx
+    
+    - name: Test nginx configuration
+      command: nginx -t
+      changed_when: false
+    
+    - name: Ensure nginx is running
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+  
+  handlers:
+    - name: restart nginx
+      systemd:
+        name: nginx
+        state: restarted
